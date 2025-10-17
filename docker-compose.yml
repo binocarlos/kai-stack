@@ -1,0 +1,81 @@
+services:
+  router:
+    image: binocarlos/noxy:v4
+    restart: always
+    ports:
+      - ${ROUTER_PORT:-80}:80
+    depends_on:
+      - api
+      - frontend
+    environment:
+      - NOXY_DEFAULT_HOST=frontend
+      - NOXY_DEFAULT_PORT=80
+      - NOXY_DEFAULT_WS=1
+      - NOXY_API_FRONT=/api/v1
+      - NOXY_API_HOST=api
+      - NOXY_API_PORT=80
+      - NOXY_API_WS=1
+
+  postgres:
+    image: postgres:12.13-alpine
+    restart: always
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_ADMIN_PASSWORD:-postgres}
+      - POSTGRES_DATABASES=postgres
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api-final-build
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - SERVER_PORT=80
+      - SERVER_BASE_URL=${SERVER_BASE_URL:-http://localhost:8091}
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DATABASE=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_ADMIN_PASSWORD:-postgres}      
+      - SERVER_JWT_SECRET=secret
+      - SERVER_FIXED_PASSWORD=secret
+      - WORKER_SECRET=secret
+    depends_on:
+      - postgres
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker-final-build
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
+      - SERVER_BASE_URL=${SERVER_BASE_URL:-http://localhost:8091}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DATABASE=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_ADMIN_PASSWORD:-postgres}
+      - SERVER_JWT_SECRET=secret
+      - SERVER_FIXED_PASSWORD=secret
+      - WORKER_SECRET=secret
+    depends_on:
+      - postgres
+  
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend-final-build
+    restart: always
+
+volumes:
+  postgres-data:

@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+set -euo pipefail
+IFS=$'\n\t'
+
+export DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+export TMUX_SESSION=${TMUX_SESSION:="badcode-stack"}
+export COMPOSE_FLAGS=${COMPOSE_FLAGS:=""}
+
+function compose() {
+  docker compose -f docker-compose.yml "$@"
+}
+
+function devcompose() {
+  docker compose -f docker-compose.yml -f docker-compose.dev.yml "$@"
+}
+
+function build() {
+  devcompose build
+}
+
+function restart() {
+  local service="${1-all}"
+  shift
+  # if the service is all, then we need to restart all the services
+  if [[ "$service" == "all" ]]; then
+    devcompose down
+    devcompose up -d
+  else
+    devcompose restart $service
+  fi
+}
+
+function rebuild() {
+  local service="${1-all}"
+  shift
+  # if the service is all, then we need to restart all the services
+  if [[ "$service" == "all" ]]; then
+    devcompose down
+    devcompose build
+    devcompose up -d
+  else
+    devcompose stop $service
+    devcompose build $service
+    devcompose up -d $service
+  fi
+}
+
+function start() {
+  if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+    echo "Session $TMUX_SESSION already exists. Attaching..."
+    sleep 1
+    tmux -2 attach -t $TMUX_SESSION
+    exit 0;
+  fi
+
+  export MANUALRUN=1
+  export LOG_LEVEL=debug
+
+  echo "Starting docker compose"
+
+  devcompose up -d
+
+  sleep 2
+
+  echo "Creating tmux session $TMUX_SESSION..."
+
+  # get the size of the window and create a session at that size
+  local screensize=$(stty size)
+  local width=$(echo -n "$screensize" | awk '{print $2}')
+  local height=$(echo -n "$screensize" | awk '{print $1}')
+  tmux -2 new-session -d -s $TMUX_SESSION -x "$width" -y "$(($height - 1))"
+
+  tmux split-window -v -d
+  tmux select-pane -t 1
+  tmux split-window -v -d
+  tmux select-pane -t 0
+  tmux split-window -v -d
+  tmux select-pane -t 1
+  tmux split-window -v -d
+  tmux select-pane -t 3
+  tmux split-window -v -d
+
+  tmux send-keys -t 0 './stack devcompose logs -f frontend' C-m
+  tmux send-keys -t 1 './stack devcompose logs -f api' C-m
+  tmux send-keys -t 2 './stack devcompose logs -f worker' C-m
+
+  tmux -2 attach-session -t $TMUX_SESSION
+}
+
+function stop() {
+  echo "Removing docker containers"
+  devcompose down
+  echo "Stopping tmux session $TMUX_SESSION..."
+  tmux kill-session -t $TMUX_SESSION ||true
+}
+
+function db() {
+  local subcommand="${1-cli}"
+  shift
+  local containername="${1-postgres}"
+  shift
+  if [[ "$subcommand" == "cli" ]]; then
+    docker compose exec $containername psql --user postgres "$@"
+  elif [[ "$subcommand" == "pipe" ]]; then
+    docker compose exec -T $containername psql --user postgres "$@"
+  fi
+}
+
+function river_migrations() {
+  docker compose exec api sh -c "go install github.com/riverqueue/river/cmd/river@latest"
+  docker compose exec api sh -c "river migrate-up --line main --database-url \"postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/postgres\""
+}
+
+function generate_types() {
+  (cd api/typescript && go run . -output $DIR/frontend/src/types/gotypes.ts)
+}
+
+# these are to be activated later
+function psql() {
+  db cli postgres "$@"
+}
+
+function psql_pipe() {
+  db pipe postgres "$@"
+}
+
+eval "$@"

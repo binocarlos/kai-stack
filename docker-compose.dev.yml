@@ -1,0 +1,43 @@
+services:
+  router:
+    environment:
+      - NOXY_DEFAULT_PORT=8080
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api-dev-env
+    environment:
+      - DEBUG_OPENAI=true
+      - LOG_LEVEL=debug
+    volumes:
+      - ./go.mod:/app/go.mod
+      - ./go.sum:/app/go.sum
+      - ./api:/app/api
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api-worker-env
+    environment:
+      - DEBUG_OPENAI=true
+      - LOG_LEVEL=debug
+    volumes:
+      - ./go.mod:/app/go.mod
+      - ./go.sum:/app/go.sum
+      - ./api:/app/api
+  
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: ui-dev-env
+    volumes:
+      - ./frontend/package.json:/app/package.json
+      - ./frontend/src:/app/src
+      - ./frontend/assets:/app/assets
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+      - ./frontend/vite.config.ts:/app/vite.config.ts
