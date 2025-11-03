@@ -93,6 +93,9 @@ export const useAccountContext = (): IAccountContext => {
   // this is called both by the initialize method and the onLogin method
   const handleUserLoaded = async (user: User) => {
     assignUserToState(user)
+    if (router.name === 'login') {
+      router.navigate('home')
+    }
   }
 
   // Main initialization sequence - runs once on mount
