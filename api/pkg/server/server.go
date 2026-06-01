@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/logger"
@@ -68,7 +69,18 @@ func NewServer(
 
 func (apiServer *StackAPIServer) ListenAndServe(ctx context.Context, _ *system.CleanupManager) error {
 	addr := fmt.Sprintf("%s:%d", apiServer.cfg.WebServer.Host, apiServer.cfg.WebServer.Port)
-	return apiServer.app.Listen(addr)
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- apiServer.app.Listen(addr) }()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return apiServer.app.ShutdownWithContext(shutdownCtx)
+	}
 }
 
 func getRequestData[TBodyData any](c fiber.Ctx) (*TBodyData, error) {

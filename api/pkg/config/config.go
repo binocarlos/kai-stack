@@ -38,6 +38,7 @@ type Database struct {
 }
 
 type WebServer struct {
+	Enabled       bool   `envconfig:"SERVER_ENABLED" default:"true" description:"Run the HTTP API server in this process."`
 	Host          string `envconfig:"SERVER_HOST" default:"0.0.0.0" description:"The host to bind the api server to."`
 	Port          int    `envconfig:"SERVER_PORT" default:"80" description:"The port to bind the api server to."`
 	URL           string `envconfig:"SERVER_URL" default:"http://localhost" description:"The base url for the api server."`
@@ -47,6 +48,7 @@ type WebServer struct {
 }
 
 type Worker struct {
+	Enabled      bool          `envconfig:"WORKER_ENABLED" default:"true" description:"Run the job queue worker in this process."`
 	Concurrency  int           `envconfig:"WORKER_CONCURRENCY" default:"10" description:"The number of parallel poll loops to run."`
 	MaxAttempts  int           `envconfig:"WORKER_MAX_ATTEMPTS" default:"3" description:"The maximum number of attempts for a job."`
 	PollInterval time.Duration `envconfig:"WORKER_POLL_INTERVAL" default:"1s" description:"How long to wait before polling the job queue again when it is empty."`

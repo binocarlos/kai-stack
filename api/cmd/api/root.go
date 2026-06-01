@@ -22,7 +22,6 @@ func NewRootCmd() *cobra.Command {
 
 	// Commands available on all platforms
 	RootCmd.AddCommand(newServeCmd())
-	RootCmd.AddCommand(newWorkerCmd())
 	RootCmd.AddCommand(newVersionCommand())
 
 	return RootCmd

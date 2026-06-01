@@ -8,7 +8,8 @@
   ### API Development ###
   #----------------------
   FROM api-base AS api-dev-env
-  RUN apk add --no-cache bash
+  # - ffmpeg is needed by worker job handlers (the worker now runs in-process)
+  RUN apk add --no-cache bash ffmpeg
   # - Air provides hot reload for Go
   RUN go install github.com/air-verse/air@v1.52.3
   # - Copy the files and run a build to make startup faster
@@ -16,17 +17,12 @@
   WORKDIR /app/api
   # - Run a build to make the intial air build faster
   RUN CGO_ENABLED=0 go build -ldflags "-s -w" -o /api
-  # - Entrypoint is the air command
+  # - Entrypoint is the air command. `serve` runs both the API and the worker
+  #   in one process, controlled by SERVER_ENABLED / WORKER_ENABLED.
   ENTRYPOINT ["air", "--build.bin", "/api", "--build.cmd", "CGO_ENABLED=0 go build -ldflags \"-s -w\" -o /api", "--"]
   CMD ["serve"]
-  
-  ### Worker Development ###
-  #----------------------
-  FROM api-dev-env AS api-worker-env
-  RUN apk add --no-cache ffmpeg
-  CMD ["worker"]
-  
-  
+
+
   #### API Build ###
   #-----------------------
   FROM api-base AS api-build-env
@@ -69,14 +65,10 @@
   COPY ./nginx.new.conf /etc/nginx/nginx.conf
   COPY --from=ui-build-env /app/dist /www
   
-  # api production image
+  # api production image — `serve` runs both the API and the worker in one
+  # process, controlled by SERVER_ENABLED / WORKER_ENABLED.
   FROM golang:1.24.2-alpine AS api-final-build
-  RUN apk --update add --no-cache ca-certificates
+  RUN apk --update add --no-cache ca-certificates ffmpeg
   COPY --from=api-build-env /api /api
   EXPOSE 80
   ENTRYPOINT ["/api", "serve"]
-  
-  # worker production image
-  FROM api-final-build AS worker-final-build
-  ENTRYPOINT ["/api", "worker"]
-  

@@ -16,19 +16,6 @@ services:
       - ./go.sum:/app/go.sum
       - ./api:/app/api
 
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: api-worker-env
-    environment:
-      - DEBUG_OPENAI=true
-      - LOG_LEVEL=debug
-    volumes:
-      - ./go.mod:/app/go.mod
-      - ./go.sum:/app/go.sum
-      - ./api:/app/api
-  
   frontend:
     build:
       context: .
