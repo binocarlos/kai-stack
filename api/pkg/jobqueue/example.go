@@ -9,8 +9,9 @@ import (
 )
 
 // ExampleJobKind is the kind for the skeleton's demonstration job. The API
-// enqueues one of these after creating an example record (see the server's
-// AfterCreate hook); the worker processes it in the background.
+// enqueues one of these after creating an example record (see
+// CreateExampleRecord in the server package); the worker processes it in the
+// background.
 const ExampleJobKind = "example"
 
 // ExamplePayload is the JSON payload for an example job.

@@ -91,9 +91,3 @@ func getRequestData[TBodyData any](c fiber.Ctx) (*TBodyData, error) {
 
 	return &bodyData, nil
 }
-
-// RegisterExampleRecordRoutes registers all example-record routes
-func (apiServer *StackAPIServer) RegisterExampleRecordRoutes() {
-	exampleRouter := NewExampleRecordRouter(apiServer, apiServer.store.ExampleRecords())
-	exampleRouter.RegisterRoutes(apiServer.router)
-}

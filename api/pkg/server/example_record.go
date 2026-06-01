@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/binocarlos/kai-stack/api/pkg/jobqueue"
-	"github.com/binocarlos/kai-stack/api/pkg/store"
 	"github.com/binocarlos/kai-stack/api/pkg/types"
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
@@ -23,105 +22,217 @@ type ExampleRecordUpdateRequest struct {
 	Config *types.ExampleConfig `json:"config"`
 }
 
-// ExampleRecordMapper maps between request DTOs and the ExampleRecord entity.
-type ExampleRecordMapper struct{}
+// RegisterExampleRecordRoutes wires up CRUD for example records plus a custom
+// by-user endpoint. This is the canonical "how to add a resource" example:
+// plain handler methods on StackAPIServer that talk to the store directly,
+// mirroring user.go. All routes require auth.
+func (apiServer *StackAPIServer) RegisterExampleRecordRoutes() {
+	records := apiServer.router.Group("/example-records", apiServer.RequireAuth)
+	records.Get("/", apiServer.ListExampleRecords)
+	records.Post("/", apiServer.CreateExampleRecord)
+	records.Get("/:id", apiServer.GetExampleRecord)
+	records.Put("/:id", apiServer.UpdateExampleRecord)
+	records.Delete("/:id", apiServer.DeleteExampleRecord)
 
-func (m *ExampleRecordMapper) CreateToEntity(req *ExampleRecordCreateRequest) (*types.ExampleRecord, error) {
-	if req.Config == nil {
-		return nil, fmt.Errorf("config is required")
-	}
-	if req.Config.Name == "" {
-		return nil, fmt.Errorf("example record name is required")
-	}
-	return &types.ExampleRecord{
-		// ID and UserID are set in the BeforeCreate hook.
-		Config: req.Config,
-	}, nil
+	// Custom route showing how to extend CRUD with a hand-written repository
+	// method (LoadForUser).
+	records.Get("/user/:userId", apiServer.ListUserExampleRecords)
 }
 
-func (m *ExampleRecordMapper) UpdateToEntity(existing *types.ExampleRecord, req *ExampleRecordUpdateRequest) error {
-	if req.Config == nil {
+// validateExampleConfig enforces the same rules the old mapper did.
+func validateExampleConfig(config *types.ExampleConfig) error {
+	if config == nil {
 		return fmt.Errorf("config is required")
 	}
-	if req.Config.Name == "" {
+	if config.Name == "" {
 		return fmt.Errorf("example record name is required")
 	}
-	existing.Config = req.Config
 	return nil
 }
 
-// ExampleRecordRouter provides CRUD for example records plus custom endpoints.
-type ExampleRecordRouter struct {
-	*ResourceRouter[types.ExampleRecord, ExampleRecordCreateRequest, ExampleRecordUpdateRequest]
-	repo     *store.ExampleRecordRepository
-	jobqueue *jobqueue.Client
+// ListExampleRecords returns all example records.
+func (apiServer *StackAPIServer) ListExampleRecords(c fiber.Ctx) error {
+	var records []types.ExampleRecord
+	if err := apiServer.store.ExampleRecords().FindAll(&records); err != nil {
+		log.Error().Err(err).Msg("Failed to list example records")
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to retrieve example records",
+			"code":  "LIST_FAILED",
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(records)
 }
 
-// NewExampleRecordRouter wires up the example record router. The AfterCreate
-// hook enqueues a background job, demonstrating the enqueue -> worker round trip.
-func NewExampleRecordRouter(apiServer *StackAPIServer, repo *store.ExampleRecordRepository) *ExampleRecordRouter {
-	hooks := &ResourceHooks[types.ExampleRecord, ExampleRecordCreateRequest, ExampleRecordUpdateRequest]{
-		BeforeCreate: func(c fiber.Ctx, record *types.ExampleRecord) error {
-			record.ID = uuid.New().String()
-
-			userID, ok := GetUserIDFromContext(c)
-			if !ok || userID == "" {
-				return fmt.Errorf("user ID is required to create an example record")
-			}
-			record.UserID = userID
-			return nil
-		},
-		AfterCreate: func(c fiber.Ctx, record *types.ExampleRecord) error {
-			// Detach background work from the request: enqueue a job that the
-			// worker will pick up. Use a fresh context so the enqueue isn't
-			// cancelled when the HTTP response is sent.
-			if err := apiServer.jobqueue.Enqueue(context.Background(), jobqueue.ExampleJobKind, jobqueue.ExamplePayload{
-				RecordID: record.ID,
-				Message:  "example record created",
-			}); err != nil {
-				// Don't fail the request - the record is already created.
-				log.Warn().Err(err).Str("record_id", record.ID).Msg("failed to enqueue example job")
-			}
-			return nil
-		},
-		BeforeUpdate: func(c fiber.Ctx, record *types.ExampleRecord) error {
-			userID, ok := GetUserIDFromContext(c)
-			if !ok || userID == "" {
-				return fmt.Errorf("user ID is required to update an example record")
-			}
-			if record.UserID != userID {
-				return fmt.Errorf("you can only update your own example records")
-			}
-			return nil
-		},
+// GetExampleRecord returns a single example record by ID.
+func (apiServer *StackAPIServer) GetExampleRecord(c fiber.Ctx) error {
+	id := c.Params("id")
+	if id == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "ID parameter is required",
+			"code":  "MISSING_ID",
+		})
 	}
 
-	config := &ResourceConfig[types.ExampleRecord, ExampleRecordCreateRequest, ExampleRecordUpdateRequest]{
-		Hooks:      hooks,
-		AuthConfig: DefaultAuthConfig(),
-		Mapper:     &ExampleRecordMapper{},
+	var record types.ExampleRecord
+	if err := apiServer.store.ExampleRecords().FindByID(id, &record); err != nil {
+		log.Error().Err(err).Str("id", id).Msg("Failed to find example record")
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Example record not found",
+			"code":  "NOT_FOUND",
+		})
 	}
-
-	resourceRouter := NewResourceRouter(apiServer, repo.Repository, config)
-
-	return &ExampleRecordRouter{
-		ResourceRouter: resourceRouter,
-		repo:           repo,
-		jobqueue:       apiServer.jobqueue,
-	}
+	return c.Status(fiber.StatusOK).JSON(record)
 }
 
-// RegisterRoutes registers CRUD routes plus the custom by-user endpoint.
-func (rr *ExampleRecordRouter) RegisterRoutes(router fiber.Router) {
-	rr.ResourceRouter.RegisterRoutes(router, "/example-records")
+// CreateExampleRecord creates an example record owned by the authenticated user,
+// then enqueues a background job. The enqueue uses a fresh context so it isn't
+// cancelled when the HTTP response is sent, and a failure to enqueue does not
+// fail the request (the record is already created).
+func (apiServer *StackAPIServer) CreateExampleRecord(c fiber.Ctx) error {
+	req, err := getRequestData[ExampleRecordCreateRequest](c)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid request body",
+			"code":  "INVALID_REQUEST",
+		})
+	}
 
-	// Custom route showing how to extend the base router with the repository's
-	// hand-written methods.
-	router.Get("/example-records/user/:userId", rr.withAuth(rr.GetUserRecords))
+	if err := validateExampleConfig(req.Config); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+			"code":  "INVALID_REQUEST",
+		})
+	}
+
+	userID, ok := GetUserIDFromContext(c)
+	if !ok || userID == "" {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": "user ID is required to create an example record",
+			"code":  "UNAUTHORIZED",
+		})
+	}
+
+	record := &types.ExampleRecord{
+		ID:     uuid.New().String(),
+		UserID: userID,
+		Config: req.Config,
+	}
+
+	if err := apiServer.store.ExampleRecords().Create(record); err != nil {
+		log.Error().Err(err).Msg("Failed to create example record")
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to create example record",
+			"code":  "CREATE_FAILED",
+		})
+	}
+
+	if err := apiServer.jobqueue.Enqueue(context.Background(), jobqueue.ExampleJobKind, jobqueue.ExamplePayload{
+		RecordID: record.ID,
+		Message:  "example record created",
+	}); err != nil {
+		log.Warn().Err(err).Str("record_id", record.ID).Msg("failed to enqueue example job")
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(record)
 }
 
-// GetUserRecords returns all example records for a user, via LoadForUser.
-func (rr *ExampleRecordRouter) GetUserRecords(c fiber.Ctx) error {
+// UpdateExampleRecord updates an example record the authenticated user owns.
+func (apiServer *StackAPIServer) UpdateExampleRecord(c fiber.Ctx) error {
+	id := c.Params("id")
+	if id == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "ID parameter is required",
+			"code":  "MISSING_ID",
+		})
+	}
+
+	req, err := getRequestData[ExampleRecordUpdateRequest](c)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid request body",
+			"code":  "INVALID_REQUEST",
+		})
+	}
+
+	if err := validateExampleConfig(req.Config); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+			"code":  "INVALID_REQUEST",
+		})
+	}
+
+	var record types.ExampleRecord
+	if err := apiServer.store.ExampleRecords().FindByID(id, &record); err != nil {
+		log.Error().Err(err).Str("id", id).Msg("Failed to find example record for update")
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Example record not found",
+			"code":  "NOT_FOUND",
+		})
+	}
+
+	userID, ok := GetUserIDFromContext(c)
+	if !ok || userID == "" {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": "user ID is required to update an example record",
+			"code":  "UNAUTHORIZED",
+		})
+	}
+	if record.UserID != userID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": "you can only update your own example records",
+			"code":  "FORBIDDEN",
+		})
+	}
+
+	record.Config = req.Config
+
+	if err := apiServer.store.ExampleRecords().Update(&record); err != nil {
+		log.Error().Err(err).Msg("Failed to update example record")
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to update example record",
+			"code":  "UPDATE_FAILED",
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(record)
+}
+
+// DeleteExampleRecord deletes an example record by ID.
+func (apiServer *StackAPIServer) DeleteExampleRecord(c fiber.Ctx) error {
+	id := c.Params("id")
+	if id == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "ID parameter is required",
+			"code":  "MISSING_ID",
+		})
+	}
+
+	var record types.ExampleRecord
+	if err := apiServer.store.ExampleRecords().FindByID(id, &record); err != nil {
+		log.Error().Err(err).Str("id", id).Msg("Failed to find example record for deletion")
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Example record not found",
+			"code":  "NOT_FOUND",
+		})
+	}
+
+	if err := apiServer.store.ExampleRecords().Delete(id); err != nil {
+		log.Error().Err(err).Msg("Failed to delete example record")
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to delete example record",
+			"code":  "DELETE_FAILED",
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Example record deleted successfully",
+		"id":      id,
+	})
+}
+
+// ListUserExampleRecords returns all example records for a user, via the
+// hand-written LoadForUser query. Users may only view their own records.
+func (apiServer *StackAPIServer) ListUserExampleRecords(c fiber.Ctx) error {
 	userID := c.Params("userId")
 	if userID == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -138,7 +249,7 @@ func (rr *ExampleRecordRouter) GetUserRecords(c fiber.Ctx) error {
 		})
 	}
 
-	records, err := rr.repo.LoadForUser(userID)
+	records, err := apiServer.store.ExampleRecords().LoadForUser(userID)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to load example records for user",
