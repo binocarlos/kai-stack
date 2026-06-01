@@ -18,17 +18,21 @@ type OpenAI struct {
 	URL    string `envconfig:"OPENAI_URL"  description:"The URL for openAI" required:"true"`
 }
 
+// Database points at a Supabase Postgres instance (there is no local Postgres).
+// Use the session pooler host (aws-0-<region>.pooler.supabase.com:5432, username
+// postgres.<project-ref>) or the direct connection (db.<ref>.supabase.co:5432);
+// both keep a 1:1 connection so GORM's prepared statements work. SSL is required.
 type Database struct {
-	Host            string        `envconfig:"POSTGRES_HOST" description:"The host to connect to the postgres server." required:"true"`
-	Port            int           `envconfig:"POSTGRES_PORT_OVERRIDE" default:"5432" description:"The port to connect to the postgres server."`
-	Database        string        `envconfig:"POSTGRES_DATABASE" default:"forum" description:"The database to connect to the postgres server."`
-	Username        string        `envconfig:"POSTGRES_USER" description:"The username to connect to the postgres server." required:"true"`
-	Password        string        `envconfig:"POSTGRES_PASSWORD" description:"The password to connect to the postgres server." required:"true"`
-	SSL             bool          `envconfig:"POSTGRES_SSL" default:"false"`
+	Host            string        `envconfig:"POSTGRES_HOST" description:"Supabase host, e.g. aws-0-eu-west-1.pooler.supabase.com or db.<ref>.supabase.co." required:"true"`
+	Port            int           `envconfig:"POSTGRES_PORT_OVERRIDE" default:"5432" description:"The Supabase port (5432 session pooler / direct)."`
+	Database        string        `envconfig:"POSTGRES_DATABASE" default:"postgres" description:"The database to connect to (Supabase default: postgres)."`
+	Username        string        `envconfig:"POSTGRES_USER" description:"Supabase user: postgres.<project-ref> for the pooler, or postgres for direct." required:"true"`
+	Password        string        `envconfig:"POSTGRES_PASSWORD" description:"The Supabase database password." required:"true"`
+	SSL             bool          `envconfig:"POSTGRES_SSL" default:"true" description:"Supabase requires SSL; keep this true."`
 	Schema          string        `envconfig:"POSTGRES_SCHEMA"` // Defaults to public
-	AutoMigrate     bool          `envconfig:"POSTGRES_AUTO_MIGRATE" default:"true" description:"Should we automatically run the migrations?"`
-	MaxConns        int           `envconfig:"POSTGRES_MAX_CONNS" default:"50"`
-	IdleConns       int           `envconfig:"POSTGRES_IDLE_CONNS" default:"25"`
+	AutoMigrate     bool          `envconfig:"POSTGRES_AUTO_MIGRATE" default:"true" description:"Apply pending Go migrations on boot?"`
+	MaxConns        int           `envconfig:"POSTGRES_MAX_CONNS" default:"20" description:"Keep modest - Supabase enforces connection ceilings per plan."`
+	IdleConns       int           `envconfig:"POSTGRES_IDLE_CONNS" default:"5"`
 	MaxConnLifetime time.Duration `envconfig:"POSTGRES_MAX_CONN_LIFETIME" default:"1h"`
 	MaxConnIdleTime time.Duration `envconfig:"POSTGRES_MAX_CONN_IDLE_TIME" default:"1m"`
 }
@@ -43,10 +47,11 @@ type WebServer struct {
 }
 
 type Worker struct {
-	Concurrency int    `envconfig:"WORKER_CONCURRENCY" default:"10" description:"The number parallel workers to run - this should be the number of cores on the machine."`
-	MaxAttempts int    `envconfig:"WORKER_MAX_ATTEMPTS" default:"3" description:"The maximum number of attempts for a job."`
-	APIURL      string `envconfig:"WORKER_SERVER_URL" default:"http://api" description:"The url for workers to connect to the api."`
-	Secret      string `envconfig:"WORKER_SECRET" description:"The secret for the worker." required:"true"`
+	Concurrency  int           `envconfig:"WORKER_CONCURRENCY" default:"10" description:"The number of parallel poll loops to run."`
+	MaxAttempts  int           `envconfig:"WORKER_MAX_ATTEMPTS" default:"3" description:"The maximum number of attempts for a job."`
+	PollInterval time.Duration `envconfig:"WORKER_POLL_INTERVAL" default:"1s" description:"How long to wait before polling the job queue again when it is empty."`
+	APIURL       string        `envconfig:"WORKER_SERVER_URL" default:"http://api" description:"The url for workers to connect to the api."`
+	Secret       string        `envconfig:"WORKER_SECRET" description:"The secret for the worker." required:"true"`
 }
 
 func LoadConfig() (Config, error) {

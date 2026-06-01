@@ -7,9 +7,8 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/doug-martin/goqu/v9/dialect/postgres"        // postgres query builder
-	_ "github.com/golang-migrate/migrate/v4/database/postgres" // postgres migrations
-	_ "github.com/lib/pq"                                      // enable postgres driver
+	_ "github.com/doug-martin/goqu/v9/dialect/postgres" // postgres query builder
+	_ "github.com/lib/pq"                               // enable postgres driver
 
 	"github.com/rs/zerolog/log"
 	gormpostgres "gorm.io/driver/postgres"
@@ -144,8 +143,6 @@ func connect(ctx context.Context, cfg connectConfig) (*gorm.DB, error) {
 
 				continue
 			}
-
-			db = db.Debug()
 
 			sqlDB, err := db.DB()
 			if err != nil {

@@ -12,8 +12,8 @@ func main() {
 	flag.Parse()
 
 	converter := typescriptify.New().
-		Add(types.Comic{}).
-		AddEnum(types.AllComicTypes).
+		Add(types.ExampleRecord{}).
+		AddEnum(types.AllExampleTypes).
 		Add(types.LoginRequest{}).
 		Add(types.LoginResponse{}).
 		Add(types.UserStatusResponse{}).

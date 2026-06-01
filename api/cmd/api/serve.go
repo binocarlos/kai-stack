@@ -62,10 +62,7 @@ func serve(cmd *cobra.Command, cfg *config.Config) error {
 		return err
 	}
 
-	workerClient, err := jobqueue.NewClient(ctx, cfg, postgresStore)
-	if err != nil {
-		return err
-	}
+	workerClient := jobqueue.NewClient(cfg, postgresStore)
 
 	server, err := server.NewServer(
 		cfg,

@@ -9,7 +9,7 @@ import (
 
 const AUTOCODER_CODING_RESULTS_FUNCTION_NAME = "coding_results"
 
-func GetComicExamplePrompt() (openai.ChatCompletionRequest, error) {
+func GetExamplePrompt() (openai.ChatCompletionRequest, error) {
 	systemMessage := openai.ChatCompletionMessage{
 		Role:    "system",
 		Content: `This is the system message.`,
@@ -28,8 +28,8 @@ func GetComicExamplePrompt() (openai.ChatCompletionRequest, error) {
 			{
 				Type: openai.ToolTypeFunction,
 				Function: &openai.FunctionDefinition{
-					Name:        "generate_comics",
-					Description: "Generate comics for the given ids",
+					Name:        "generate_examples",
+					Description: "Generate example records for the given ids",
 					Parameters: jsonschema.Definition{
 						Type: jsonschema.Object,
 						Properties: map[string]jsonschema.Definition{
@@ -37,9 +37,9 @@ func GetComicExamplePrompt() (openai.ChatCompletionRequest, error) {
 								Type: jsonschema.Array,
 								Items: &jsonschema.Definition{
 									Type:        jsonschema.String,
-									Description: "The id of the comic",
+									Description: "The id of the example record",
 								},
-								Description: "The ids of the comics to generate",
+								Description: "The ids of the example records to generate",
 							},
 						},
 						Required: []string{"ids"},

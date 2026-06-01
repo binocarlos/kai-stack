@@ -6,10 +6,8 @@ import (
 	"fmt"
 
 	"github.com/binocarlos/kai-stack/api/pkg/config"
-	"github.com/binocarlos/kai-stack/api/pkg/types"
-	_ "github.com/doug-martin/goqu/v9/dialect/postgres"        // postgres query builder
-	_ "github.com/golang-migrate/migrate/v4/database/postgres" // postgres migrations
-	_ "github.com/lib/pq"                                      // enable postgres driver
+	_ "github.com/doug-martin/goqu/v9/dialect/postgres" // postgres query builder
+	_ "github.com/lib/pq"                               // enable postgres driver
 
 	"gorm.io/gorm"
 )
@@ -19,7 +17,8 @@ type PostgresStore struct {
 
 	gdb *gorm.DB
 
-	comics *ComicRepository
+	exampleRecords *ExampleRecordRepository
+	jobs           *JobRepository
 }
 
 func NewPostgresStore(
@@ -45,15 +44,23 @@ func NewPostgresStore(
 	}
 
 	store := &PostgresStore{
-		cfg:    cfg,
-		gdb:    gormDB,
-		comics: NewComicRepository(gormDB),
+		cfg:            cfg,
+		gdb:            gormDB,
+		exampleRecords: NewExampleRecordRepository(gormDB),
+		jobs:           NewJobRepository(gormDB),
 	}
 
+	// Schema is owned by our own migration system (see migrations.go), not by
+	// GORM AutoMigrate. AutoMigrate=true means "apply pending migrations on boot".
 	if cfg.AutoMigrate {
-		err = store.autoMigrate()
-		if err != nil {
-			return nil, fmt.Errorf("there was an error doing the automigration: %s", err.Error())
+		if cfg.Schema != "" {
+			if err := gormDB.WithContext(context.Background()).
+				Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", cfg.Schema)).Error; err != nil {
+				return nil, fmt.Errorf("failed to create schema %s: %w", cfg.Schema, err)
+			}
+		}
+		if err := store.runMigrations(context.Background()); err != nil {
+			return nil, fmt.Errorf("failed to run migrations: %w", err)
 		}
 	}
 
@@ -68,34 +75,17 @@ func (s *PostgresStore) Close() error {
 	return sqlDB.Close()
 }
 
-func (s *PostgresStore) autoMigrate() error {
-	// If schema is specified, check if it exists and if not - create it
-	if s.cfg.Schema != "" {
-		err := s.gdb.WithContext(context.Background()).Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", s.cfg.Schema)).Error
-		if err != nil {
-			return err
-		}
-	}
-
-	err := s.gdb.WithContext(context.Background()).AutoMigrate(
-		&types.Comic{},
-	)
-	if err != nil {
-		return err
-	}
-
-	// if err := createFK(s.gdb, types.Comic{}, types.User{}, "user_id", "id", "CASCADE", "CASCADE"); err != nil {
-	// 	log.Err(err).Msg("failed to add DB FK")
-	// }
-
-	return nil
-}
+// SQLDB exposes the underlying *sql.DB for reuse in other subsystems.
 func (s *PostgresStore) SQLDB() (*sql.DB, error) {
-	// expose the underlying *sql.DB for reuse in other subsystems (e.g. job queue)
 	return s.gdb.DB()
 }
 
-// Comics returns the comic repository
-func (s *PostgresStore) Comics() *ComicRepository {
-	return s.comics
+// ExampleRecords returns the example_record repository (relational + vector).
+func (s *PostgresStore) ExampleRecords() *ExampleRecordRepository {
+	return s.exampleRecords
+}
+
+// Jobs returns the background-job queue repository.
+func (s *PostgresStore) Jobs() *JobRepository {
+	return s.jobs
 }

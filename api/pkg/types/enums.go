@@ -1,14 +1,14 @@
 package types
 
-type ComicType int
+type ExampleType int
 
 const (
-	ConfigTypePreview ComicType = iota
+	ConfigTypePreview ExampleType = iota
 	ConfigTypePublished
 )
 
-var AllComicTypes = []struct {
-	Value  ComicType
+var AllExampleTypes = []struct {
+	Value  ExampleType
 	TSName string
 }{
 	{ConfigTypePreview, "preview"},

@@ -43,7 +43,7 @@ func NewResourceRouter[T any, TCreate any, TUpdate any](
 }
 
 // RegisterRoutes registers all CRUD routes for this resource
-// path should be the base path for the resource (e.g., "/comics")
+// path should be the base path for the resource (e.g., "/example-records")
 // This will create the following routes:
 // - GET    {path}      -> List
 // - POST   {path}      -> Create

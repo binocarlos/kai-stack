@@ -61,7 +61,7 @@ func NewServer(
 	}
 
 	server.RegisterUserRoutes()
-	server.RegisterComicRoutes()
+	server.RegisterExampleRecordRoutes()
 
 	return server, nil
 }
@@ -80,8 +80,8 @@ func getRequestData[TBodyData any](c fiber.Ctx) (*TBodyData, error) {
 	return &bodyData, nil
 }
 
-// RegisterComicRoutes registers all comic-related routes
-func (apiServer *StackAPIServer) RegisterComicRoutes() {
-	comicRouter := NewComicRouter(apiServer, apiServer.store.Comics())
-	comicRouter.RegisterRoutes(apiServer.router)
+// RegisterExampleRecordRoutes registers all example-record routes
+func (apiServer *StackAPIServer) RegisterExampleRecordRoutes() {
+	exampleRouter := NewExampleRecordRouter(apiServer, apiServer.store.ExampleRecords())
+	exampleRouter.RegisterRoutes(apiServer.router)
 }

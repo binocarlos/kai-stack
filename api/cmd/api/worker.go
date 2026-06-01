@@ -61,17 +61,13 @@ func worker(cmd *cobra.Command, cfg *config.Config) error {
 		return err
 	}
 
-	workerClient, err := jobqueue.NewClient(ctx, cfg, postgresStore)
-	if err != nil {
+	workerClient := jobqueue.NewClient(cfg, postgresStore)
+
+	if err := workerClient.Start(ctx); err != nil {
 		return err
 	}
 
-	err = workerClient.Start()
-	if err != nil {
-		return err
-	}
-
-	log.Info().Msgf("Platinum worker listening for jobs")
+	log.Info().Msgf("worker listening for jobs")
 
 	<-ctx.Done()
 	return nil
