@@ -52,6 +52,16 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               stack
             </Typography>
           </Box>
+          {account.user && (
+            <Box component="div" sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Typography variant="body2">
+                {account.user.email}
+              </Typography>
+              <Button variant="outlined" color="inherit" onClick={account.onLogout}>
+                Logout
+              </Button>
+            </Box>
+          )}
         </Toolbar>
       </AppBar>
       <Box id="main-content" component="main" sx={{ flexGrow: 1, mt: '64px', backgroundColor: 'rgb(245, 245, 245)' }}>
