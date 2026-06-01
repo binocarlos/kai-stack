@@ -54,6 +54,12 @@
   ### Frontend Build ###
   #----------------------
   FROM ui-base AS ui-build-env
+  # Supabase frontend config - Vite inlines VITE_* at build time. The anon key
+  # is public, so embedding it in the static bundle is expected and safe.
+  ARG VITE_SUPABASE_URL
+  ARG VITE_SUPABASE_ANON_KEY
+  ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+  ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
   # Copy the rest of the code
   COPY ./frontend /app
   # Build the frontend

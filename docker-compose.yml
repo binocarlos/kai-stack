@@ -3,7 +3,7 @@ services:
     image: binocarlos/noxy:v4
     restart: always
     ports:
-      - ${ROUTER_PORT:-80}:80
+      - ${ROUTER_PORT:-3000}:80
     depends_on:
       - api
       - frontend
@@ -35,10 +35,18 @@ services:
       - SERVER_JWT_SECRET=${SERVER_JWT_SECRET:-secret}
       - SERVER_FIXED_PASSWORD=${SERVER_FIXED_PASSWORD:-secret}
       - WORKER_SECRET=${WORKER_SECRET:-secret}
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_JWT_AUD=${SUPABASE_JWT_AUD:-authenticated}
+      - AUTH_SUPABASE_ENABLED=${AUTH_SUPABASE_ENABLED:-true}
+      - AUTH_LOCAL_ENABLED=${AUTH_LOCAL_ENABLED:-true}
 
   frontend:
     build:
       context: .
       dockerfile: Dockerfile
       target: frontend-final-build
+      args:
+        # Vite inlines these into the static bundle at build time.
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
     restart: always

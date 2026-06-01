@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/logger"
 
+	"github.com/binocarlos/kai-stack/api/pkg/auth"
 	"github.com/binocarlos/kai-stack/api/pkg/config"
 	"github.com/binocarlos/kai-stack/api/pkg/jobqueue"
 	"github.com/binocarlos/kai-stack/api/pkg/store"
@@ -17,11 +18,12 @@ import (
 )
 
 type StackAPIServer struct {
-	app      *fiber.App
-	router   fiber.Router
-	cfg      *config.Config
-	store    *store.PostgresStore
-	jobqueue *jobqueue.Client
+	app            *fiber.App
+	router         fiber.Router
+	cfg            *config.Config
+	store          *store.PostgresStore
+	jobqueue       *jobqueue.Client
+	authenticators []auth.Authenticator
 }
 
 func NewServer(
@@ -35,6 +37,11 @@ func NewServer(
 
 	if cfg.WebServer.Port == 0 {
 		return nil, fmt.Errorf("server port is required")
+	}
+
+	authenticators, err := buildAuthenticators(cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	app := fiber.New(fiber.Config{
@@ -54,11 +61,12 @@ func NewServer(
 	}))
 
 	server := &StackAPIServer{
-		app:      app,
-		router:   app.Group(cfg.WebServer.APIPath),
-		cfg:      cfg,
-		store:    store,
-		jobqueue: workerClient,
+		app:            app,
+		router:         app.Group(cfg.WebServer.APIPath),
+		cfg:            cfg,
+		store:          store,
+		jobqueue:       workerClient,
+		authenticators: authenticators,
 	}
 
 	server.RegisterUserRoutes()

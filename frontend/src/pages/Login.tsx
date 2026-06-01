@@ -1,25 +1,24 @@
 import React, { useState } from 'react'
-import { Box, TextField, Button, Typography, Alert, Link } from '@mui/material'
+import { Box, TextField, Button, Typography, Divider } from '@mui/material'
+import GoogleIcon from '@mui/icons-material/Google'
 import useAccount from '../hooks/useAccount'
-import useRouter from '../hooks/useRouter'
 
 export const Home: React.FC = () => {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const account = useAccount()
-  const router = useRouter()
 
   const handleLogin = async () => {
     await account.onLogin(username, password)
   }
- 
-  const handleForgotPassword = () => {
-    router.navigate('forgot-password')
+
+  const handleGoogleLogin = async () => {
+    await account.onLoginWithGoogle()
   }
 
   return (
     <Box sx={{ display: 'flex', height: 'calc(100vh - 64px)' }}>
- 
+
       {/* Right section */}
       <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <Box
@@ -36,6 +35,22 @@ export const Home: React.FC = () => {
           <Typography variant="h4" component="h1" gutterBottom>
             Login
           </Typography>
+
+          {account.supabaseEnabled && (
+            <>
+              <Button
+                fullWidth
+                variant="contained"
+                startIcon={<GoogleIcon />}
+                sx={{ mt: 1 }}
+                onClick={handleGoogleLogin}
+              >
+                Sign in with Google
+              </Button>
+              <Divider sx={{ my: 2 }}>or</Divider>
+            </>
+          )}
+
           <Box>
             <TextField
               fullWidth
@@ -64,7 +79,7 @@ export const Home: React.FC = () => {
             />
             <Button
               fullWidth
-              variant="contained"
+              variant="outlined"
               sx={{ mt: 2 }}
               onClick={handleLogin}
             >

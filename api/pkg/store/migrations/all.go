@@ -10,4 +10,5 @@ var All = []Migration{
 	{Name: "000001_initial_schema", Up: InitialSchema},
 	{Name: "000002_vector_support", Up: VectorSupport},
 	{Name: "000003_jobs", Up: Jobs},
+	{Name: "000004_profiles", Up: Profiles},
 }

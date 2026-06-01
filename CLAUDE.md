@@ -7,12 +7,28 @@ Conventions for this repo. Read before adding features so every session works th
 
 ## Stack
 - **`api/`** — Go API: [Fiber](https://gofiber.io) HTTP, GORM over **Supabase** Postgres, **pgvector** search, an in-house migration system, and a simple Postgres-backed job queue (`SELECT ... FOR UPDATE SKIP LOCKED`, no external broker).
-- **`frontend/`** — React + Vite SPA. All data goes through the Go API (no Supabase client in the browser).
+- **`frontend/`** — React + Vite SPA. All data goes through the Go API; the browser uses Supabase **only for auth** (Google OAuth via `supabase-js`), then sends the resulting JWT to the API as a Bearer token.
 
 ## Config & env
 - Every env var is declared in `api/pkg/config/config.go` via `envconfig` tags — add new config there, nowhere else.
 - `.env` is loaded in `api/main.go`; `.env.example` is the canonical reference.
 - Supabase connection is `POSTGRES_*` (SSL required; pooler or direct host). `POSTGRES_AUTO_MIGRATE=true` applies migrations on boot.
+
+## First-time setup (Supabase)
+The Postgres connection is assumed to already work. To bring up **auth** (Google login), do this once, then `cp .env.example .env` and fill the values below.
+
+**In the Supabase dashboard:**
+1. **Authentication → Providers → Google**: enable it and paste a Google OAuth **Client ID + Secret**. (Create them in Google Cloud Console → Credentials → OAuth client ID → *Web application*, with authorized redirect URI `https://<project-ref>.supabase.co/auth/v1/callback`.)
+2. **Authentication → URL Configuration**: set **Site URL** and add **Redirect URLs** for every origin you log in from — e.g. `http://localhost:8080` (dev) and your prod domain. The app redirects back to `window.location.origin`, which must be allow-listed here.
+3. **Project Settings → API Keys**: copy a browser/client key — the new **publishable** key (`sb_publishable_…`, preferred) or the legacy **anon** key. (The RLS warning on it doesn't apply here: the browser uses Supabase only for auth, never its data API.) The **Project URL** is `https://<project-ref>.supabase.co`, where `<project-ref>` is the Project ID under **Settings → General**.
+4. **JWT keys**: new projects use asymmetric signing keys by default — the API verifies tokens via the JWKS at `<SUPABASE_URL>/auth/v1/.well-known/jwks.json`, no secret needed. (Legacy HS256-only projects would need a code change; flagged, not supported yet.)
+
+**Env vars to set** (see `.env.example` for the full annotated list):
+- API (verifies Supabase JWTs): `SUPABASE_URL`, plus `AUTH_SUPABASE_ENABLED=true`, `SUPABASE_JWT_AUD=authenticated`, `AUTH_LOCAL_ENABLED` (keep `true` for the dev fixed-password fallback).
+- Frontend (Vite inlines at build time; anon key is public): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+- Still required regardless: `POSTGRES_*`, `OPENAI_KEY`, `OPENAI_URL`, `SERVER_JWT_SECRET`, `SERVER_FIXED_PASSWORD`, `WORKER_SECRET`.
+
+**Auth model**: the API verifies a Bearer JWT (Supabase via JWKS, or the local HS256 token) behind the `auth.Authenticator` seam (`api/pkg/auth/`), then maps the identity onto a row in the `profiles` table — that profile UUID is the app's canonical user id. Add a new provider by implementing `Authenticator`; nothing downstream changes.
 
 ## Server conventions (`api/pkg/server/`)
 - Handlers are **plain methods on `*StackAPIServer`** that call the store/jobqueue directly. See `user.go` and `example_record.go`. **There is no generic resource/mapper/hook abstraction — write CRUD explicitly.**
@@ -47,7 +63,7 @@ Template: `example.go`.
 ## Frontend (`frontend/`)
 - Stack: Vite + React + router5 + TanStack Query + axios + MUI.
 - **Add a page**: component in `src/pages/`, then a route in `src/routes.tsx` (`name`/`path`/`meta`/`render`, optional `processRoute` auth guard).
-- **Data**: hooks in `src/hooks/` using `useQuery`/`useMutation` + axios against `API_BASE_URL` (`src/constants/system.ts`, = `/api/v1`). The Bearer token is set globally in `src/contexts/account.tsx`. Surface errors with `extractErrorMessage` (`src/utils/apitools.ts`) + `useSnackbar`.
+- **Data**: hooks in `src/hooks/` using `useQuery`/`useMutation` + axios against `API_BASE_URL` (`src/constants/system.ts`, = `/api/v1`). The Bearer token is attached to every request by an axios interceptor in `src/supabase.ts` (Supabase session token, else the local token); login state lives in `src/contexts/account.tsx`. Surface errors with `extractErrorMessage` (`src/utils/apitools.ts`) + `useSnackbar`.
 
 ## Run / build
 - API: `cd api && go build ./... && go vet ./...`; run the server via the cobra `serve` command.

@@ -17,8 +17,17 @@ func (apiServer *StackAPIServer) RegisterUserRoutes() {
 	apiServer.router.Post("/user/logout", apiServer.RequireAuth, apiServer.Logout)
 }
 
-// Login authenticates a user with Carbon and returns a JWT token
+// Login authenticates against the local fixed password and returns an HS256
+// JWT. This is the dev/CI path; production logins go through Supabase (the
+// frontend obtains a Supabase token directly). Disabled when the local
+// provider is turned off.
 func (apiServer *StackAPIServer) Login(c fiber.Ctx) error {
+	if !apiServer.cfg.Auth.LocalEnabled {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": "local password login is disabled",
+		})
+	}
+
 	req, err := getRequestData[types.LoginRequest](c)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -60,8 +69,12 @@ func (apiServer *StackAPIServer) GetUserStatus(c fiber.Ctx) error {
 			"error": "user ID is required",
 		})
 	}
+	email, _ := GetUserEmailFromContext(c)
+	roles, _ := GetUserRolesFromContext(c)
 	return c.Status(fiber.StatusOK).JSON(&types.UserStatusResponse{
 		UserID: userID,
+		Email:  email,
+		Roles:  types.Roles(roles),
 	})
 }
 

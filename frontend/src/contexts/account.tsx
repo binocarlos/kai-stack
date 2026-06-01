@@ -1,5 +1,5 @@
-import { createContext, useCallback, useMemo, useEffect, useState, useContext, useRef } from 'react'
-import axios, { AxiosResponse } from 'axios'
+import { createContext, useEffect, useState, useContext } from 'react'
+import axios from 'axios'
 import useLoading from '../hooks/useLoading'
 import useSnackbar from '../hooks/useSnackbar'
 import useRouter from '../hooks/useRouter'
@@ -7,30 +7,40 @@ import useRouter from '../hooks/useRouter'
 import {
   User,
   UserStatusResponse,
-  LoginRequest,
   LoginResponse,
+  LoginRequest,
 } from '../types/gotypes'
 
 import {
   API_BASE_URL,
 } from '../constants/system'
 
-import { extractErrorMessage } from '../utils/apitools'
+import {
+  supabase,
+  supabaseEnabled,
+  setLocalToken,
+  clearLocalToken,
+  getAuthToken,
+} from '../supabase'
 
-export const SESSION_STORAGE_KEY = 'stack_session_info'
+import { extractErrorMessage } from '../utils/apitools'
 
 export interface IAccountContext {
   initialized: boolean,
   loading: boolean,
+  supabaseEnabled: boolean,
   user?: User,
-  onLogin: (username: string, password: string) => Promise<void>,
+  onLogin: (email: string, password: string) => Promise<void>,
+  onLoginWithGoogle: () => Promise<void>,
   onLogout: () => void,
 }
 
 export const AccountContext = createContext<IAccountContext>({
   initialized: false,
   loading: true,
+  supabaseEnabled,
   onLogin: async () => {},
+  onLoginWithGoogle: async () => {},
   onLogout: () => {},
 })
 
@@ -38,34 +48,17 @@ export const useAccount = () => {
   return useContext(AccountContext);
 }
 
-const loadUserFromLocalStorage = (): User | null => {
-  const storedUser = sessionStorage.getItem(SESSION_STORAGE_KEY)
-  if (!storedUser) return null
-  return JSON.parse(storedUser) as User
-}
-
-const saveUserToLocalStorage = (user: User) => {
-  sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(user))
-}
-
-const clearUserFromLocalStorage = () => {
-  sessionStorage.removeItem(SESSION_STORAGE_KEY)
-}
-
-const addTokenToAxios = (token: string) => {
-  axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
-}
-
-const clearTokenFromAxios = () => {
-  delete axios.defaults.headers.common['Authorization']
-}
-
-const loadUserStatus = async (token: string): Promise<AxiosResponse<UserStatusResponse, any>> => {
-  return axios.get<UserStatusResponse>(`${API_BASE_URL}/user/status`, {
-    headers: {
-      'Authorization': `Bearer ${token}`
-    }
-  })
+// loadUser fetches the canonical profile for whatever bearer token is currently
+// active (the axios interceptor attaches it). Returns null if not authenticated.
+const loadUser = async (): Promise<User | null> => {
+  const token = await getAuthToken()
+  if (!token) return null
+  const { data } = await axios.get<UserStatusResponse>(`${API_BASE_URL}/user/status`)
+  return {
+    user_id: data.user_id,
+    email: data.email,
+    token,
+  }
 }
 
 export const useAccountContext = (): IAccountContext => {
@@ -74,52 +67,56 @@ export const useAccountContext = (): IAccountContext => {
   const router = useRouter()
 
   const [ initialized, setInitialized ] = useState(false)
-  const [ jobLoading, setJobLoading ] = useState(false)
   const [ user, setUser ] = useState<User>()
 
-  const assignUserToState = (user: User) => {
-    setUser(user)
-    saveUserToLocalStorage(user)
-    addTokenToAxios(user.token)
-  }
-
-  const clearUserFromState = () => {
-    setUser(undefined)
-    clearUserFromLocalStorage()
-    clearTokenFromAxios()
-    router.navigate('login')
-  }
-
-  // this is called both by the initialize method and the onLogin method
-  const handleUserLoaded = async (user: User) => {
-    assignUserToState(user)
+  const handleUserLoaded = (loadedUser: User) => {
+    setUser(loadedUser)
     if (router.name === 'login') {
       router.navigate('home')
     }
   }
 
-  // Main initialization sequence - runs once on mount
-  const initialize = async (): Promise<void> => {
-    const storedUser = loadUserFromLocalStorage()
-    if (storedUser) {
-      try {
-        // if this fails then it means our cached login is invalid
-        await loadUserStatus(storedUser.token)
-        console.log('found user in local storage', storedUser)
-        await handleUserLoaded(storedUser)
-      } catch(e) {
-        const message = extractErrorMessage(e)
-        console.error('Error loading user status:', message)
-        clearUserFromState()
+  const clearUser = (navigateToLogin: boolean = true) => {
+    setUser(undefined)
+    clearLocalToken()
+    if (navigateToLogin) router.navigate('login')
+  }
+
+  // refresh re-reads the active session/token and loads the profile.
+  const refresh = async (navigateOnEmpty: boolean = true) => {
+    try {
+      const loadedUser = await loadUser()
+      if (loadedUser) {
+        handleUserLoaded(loadedUser)
+      } else {
+        clearUser(navigateOnEmpty)
       }
-    } else {
-      clearUserFromState()
+    } catch (e) {
+      console.error('Error loading user status:', extractErrorMessage(e))
+      clearUser(navigateOnEmpty)
     }
+  }
+
+  // Initialization: pick up an existing Supabase session or local token, and
+  // subscribe to Supabase auth changes (covers the OAuth redirect on return).
+  const initialize = async (): Promise<void> => {
+    await refresh(false)
+
+    if (supabase) {
+      supabase.auth.onAuthStateChange((_event, session) => {
+        if (session) {
+          refresh(false)
+        } else {
+          clearUser()
+        }
+      })
+    }
+
     loading.setLoading(false)
     setInitialized(true)
   }
 
-  // call the login method
+  // Local fixed-password login (dev/CI).
   const onLogin = async (email: string, password: string) => {
     loading.setLoading(true)
     try {
@@ -127,37 +124,44 @@ export const useAccountContext = (): IAccountContext => {
         email,
         password,
       } as LoginRequest)
-      const statusResponse = await loadUserStatus(loginResponse.data.token)
-      
-      const loggedInUser: User = {
-        email,
-        token: loginResponse.data.token,
-        user_id: statusResponse.data.user_id, 
-      }
-
-      console.log(`user logged in`, loggedInUser)
-      await handleUserLoaded(loggedInUser)
-      
+      setLocalToken(loginResponse.data.token)
+      await refresh()
       snackbar.success(`Logged in as ${email}`)
     } catch (e) {
-      const message = extractErrorMessage(e)
-      snackbar.error(message)
+      snackbar.error(extractErrorMessage(e))
       console.error('Error logging in:', e)
-      clearUserFromState()
+      clearUser()
     } finally {
       loading.setLoading(false)
     }
   }
 
-  const onLogout = async () => {
-    try {
-      await axios.post(`${API_BASE_URL}/user/logout`)  
-    } catch(e) {
-      
+  // Google sign-in via Supabase. supabase-js runs the OAuth redirect and, on
+  // return to the app, fires onAuthStateChange which drives refresh().
+  const onLoginWithGoogle = async () => {
+    if (!supabase) {
+      snackbar.error('Google sign-in is not configured')
+      return
     }
-    clearUserFromState()
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
+    })
+    if (error) {
+      snackbar.error(extractErrorMessage(error))
+    }
+  }
+
+  const onLogout = async () => {
+    if (supabase) {
+      await supabase.auth.signOut()
+    } else {
+      try {
+        await axios.post(`${API_BASE_URL}/user/logout`)
+      } catch (e) {}
+    }
+    clearUser()
     snackbar.success('Logged out')
-    router.navigate('login')
   }
 
   useEffect(() => {
@@ -166,9 +170,11 @@ export const useAccountContext = (): IAccountContext => {
 
   return {
     initialized,
-    loading: jobLoading,
+    loading: loading.loading,
+    supabaseEnabled,
     user,
     onLogin,
+    onLoginWithGoogle,
     onLogout,
   }
 }

@@ -11,6 +11,7 @@ type Config struct {
 	Database  Database
 	WebServer WebServer
 	Worker    Worker
+	Auth      Auth
 }
 
 type OpenAI struct {
@@ -54,6 +55,17 @@ type Worker struct {
 	PollInterval time.Duration `envconfig:"WORKER_POLL_INTERVAL" default:"1s" description:"How long to wait before polling the job queue again when it is empty."`
 	APIURL       string        `envconfig:"WORKER_SERVER_URL" default:"http://api" description:"The url for workers to connect to the api."`
 	Secret       string        `envconfig:"WORKER_SECRET" description:"The secret for the worker." required:"true"`
+}
+
+// Auth selects which authentication providers verify incoming bearer tokens.
+// The HTTP API verifies (does not issue) Supabase JWTs via the project's JWKS
+// endpoint, and optionally keeps a local fixed-password path for dev/CI. At
+// least one provider must be enabled (validated in server.NewServer).
+type Auth struct {
+	SupabaseEnabled bool   `envconfig:"AUTH_SUPABASE_ENABLED" default:"true" description:"Verify Supabase-issued JWTs (Google etc.) via the project JWKS."`
+	SupabaseURL     string `envconfig:"SUPABASE_URL" description:"Supabase project URL, e.g. https://<ref>.supabase.co (required when AUTH_SUPABASE_ENABLED)."`
+	SupabaseAud     string `envconfig:"SUPABASE_JWT_AUD" default:"authenticated" description:"Expected audience claim on Supabase JWTs."`
+	LocalEnabled    bool   `envconfig:"AUTH_LOCAL_ENABLED" default:"true" description:"Keep the local fixed-password login + HS256 token path (dev/CI)."`
 }
 
 func LoadConfig() (Config, error) {

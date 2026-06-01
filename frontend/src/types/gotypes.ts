@@ -25,6 +25,8 @@ export interface LoginResponse {
 }
 export interface UserStatusResponse {
     user_id: string;
+    email: string;
+    roles: string[];
 }
 export interface User {
     user_id: string;

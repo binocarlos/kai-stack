@@ -19,6 +19,7 @@ type PostgresStore struct {
 
 	exampleRecords *ExampleRecordRepository
 	jobs           *JobRepository
+	profiles       *ProfileRepository
 }
 
 func NewPostgresStore(
@@ -48,6 +49,7 @@ func NewPostgresStore(
 		gdb:            gormDB,
 		exampleRecords: NewExampleRecordRepository(gormDB),
 		jobs:           NewJobRepository(gormDB),
+		profiles:       NewProfileRepository(gormDB),
 	}
 
 	// Schema is owned by our own migration system (see migrations.go), not by
@@ -88,4 +90,9 @@ func (s *PostgresStore) ExampleRecords() *ExampleRecordRepository {
 // Jobs returns the background-job queue repository.
 func (s *PostgresStore) Jobs() *JobRepository {
 	return s.jobs
+}
+
+// Profiles returns the canonical-user repository.
+func (s *PostgresStore) Profiles() *ProfileRepository {
+	return s.profiles
 }
