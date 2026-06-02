@@ -65,6 +65,12 @@ Template: `example.go`.
 - **Add a page**: component in `src/pages/`, then a route in `src/routes.tsx` (`name`/`path`/`meta`/`render`, optional `processRoute` auth guard).
 - **Data**: hooks in `src/hooks/` using `useQuery`/`useMutation` + axios against `API_BASE_URL` (`src/constants/system.ts`, = `/api/v1`). The Bearer token is attached to every request by an axios interceptor in `src/supabase.ts` (Supabase session token, else the local token); login state lives in `src/contexts/account.tsx`. Surface errors with `extractErrorMessage` (`src/utils/apitools.ts`) + `useSnackbar`.
 
+## Solana reference app (`solana/`)
+- **Self-contained** blueprint, isolated from the Go/React app: its own `solana/stack` entrypoint, Docker toolbox, and toolchain (Anchor 1.0 + `@solana/kit` + Codama). Needs only Docker. See `solana/README.md` and `solana/docs/`.
+- Pipeline: Anchor program (`program/`) → IDL → Codama-generated `@solana/kit` client (`clients/ts/src/generated/`, committed + regenerable via `./stack codegen`) → React demo (`app/`) and standalone TS. Don't hand-edit generated code.
+- Common: `./stack build | codegen | test | test-unit | localnet | deploy-devnet | app` (run `./stack` for the list).
+- `program/counter-keypair.json` is a committed **throwaway dev** program id so the repo clones-and-runs — never reuse it for real deployments.
+
 ## Run / build
 - API: `cd api && go build ./... && go vet ./...`; run the server via the cobra `serve` command.
 - Frontend: `cd frontend && npm run dev` (port 8080) / `npm run build`.

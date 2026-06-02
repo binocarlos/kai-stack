@@ -1,0 +1,67 @@
+name: solana-reference
+
+# Three services, each a separate concern:
+#   toolbox  — Rust+Solana+Anchor+Node; you run build/test/deploy/codegen in here
+#   surfpool — local validator (LiteSVM-backed) for interactive dev + the app
+#   app      — the standalone Vite + React demo frontend
+# Drive everything through ./stack (e.g. ./stack build, ./stack app).
+
+services:
+  # Anchor image (Rust + Solana CLI + Anchor) + Node 22 — see docker/toolbox.Dockerfile.
+  # Doubles as our Node toolchain for codegen + tests.
+  toolbox:
+    build:
+      context: .
+      dockerfile: docker/toolbox.Dockerfile
+    image: solana-reference-toolbox
+    working_dir: /workspace/program
+    volumes:
+      - .:/workspace
+      # Persist cluster keypairs + caches across `run --rm` invocations.
+      - solana-config:/root/.config/solana
+      - cargo-registry:/root/.cargo/registry
+      - target-cache:/workspace/program/target
+      # Overlay the committed dev program keypair into the (volume-backed) target
+      # dir so the program id is stable across machines and matches declare_id!.
+      - ./program/counter-keypair.json:/workspace/program/target/deploy/counter-keypair.json
+    environment:
+      - ANCHOR_PROVIDER_URL=${ANCHOR_PROVIDER_URL:-http://surfpool:8899}
+      - ANCHOR_WALLET=${ANCHOR_WALLET:-/root/.config/solana/id.json}
+    networks: [solana]
+
+  surfpool:
+    image: surfpool/surfpool:latest
+    # --no-tui: print logs instead of a terminal UI (we're in a container).
+    # --no-deploy: just run the validator; we deploy with `anchor deploy`.
+    # --host 0.0.0.0: reachable from the host and the app container.
+    command: ["start", "--no-tui", "--no-deploy", "--host", "0.0.0.0"]
+    ports:
+      - "8899:8899"   # JSON-RPC
+      - "8900:8900"   # WebSocket
+      - "18488:18488" # Surfpool Studio dashboard
+    networks: [solana]
+
+  app:
+    image: node:22-alpine
+    working_dir: /app
+    command: ["sh", "-c", "yarn install && yarn dev --host 0.0.0.0"]
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./app:/app
+      - /app/node_modules
+      # The app imports the generated kit client from the sibling clients/ folder
+      # (resolved via a Vite alias — see app/vite.config.ts).
+      - ./clients:/clients
+    environment:
+      - VITE_RPC_URL=${VITE_RPC_URL:-http://localhost:8899}
+      - VITE_PROGRAM_ID=${VITE_PROGRAM_ID:-8yy1KCyWhqUxgebL6yvZeiA7NwLRQnEuxj9AoSSvYKTR}
+    networks: [solana]
+
+volumes:
+  solana-config:
+  cargo-registry:
+  target-cache:
+
+networks:
+  solana:

@@ -1,0 +1,25 @@
+{
+  "name": "counter-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Generated @solana/kit client for the counter program (regenerable via ./stack codegen)",
+  "main": "src/generated/index.ts",
+  "scripts": {
+    "generate": "node generate.mjs",
+    "typecheck": "tsc --noEmit",
+    "example:increment": "tsx examples/increment.ts"
+  },
+  "dependencies": {
+    "@solana/kit": "^6.9.0",
+    "@solana/program-client-core": "^6.9.0"
+  },
+  "devDependencies": {
+    "@codama/nodes-from-anchor": "^1.5.0",
+    "@codama/renderers-js": "^2.2.0",
+    "@types/node": "^25.9.1",
+    "codama": "^1.7.0",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}

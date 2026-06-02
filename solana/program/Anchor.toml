@@ -1,0 +1,28 @@
+[toolchain]
+anchor_version = "1.0.2"
+
+[features]
+resolution = true
+skip-lint = false
+
+# Program id per cluster. `anchor keys sync` (./stack keys-sync) keeps these in
+# step with the keypair in target/deploy/ and the declare_id! in lib.rs.
+[programs.localnet]
+counter = "8yy1KCyWhqUxgebL6yvZeiA7NwLRQnEuxj9AoSSvYKTR"
+
+[programs.devnet]
+counter = "8yy1KCyWhqUxgebL6yvZeiA7NwLRQnEuxj9AoSSvYKTR"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"
+
+# `anchor test` runs this after starting a validator and deploying. The suite
+# uses the generated @solana/kit client (../clients/ts) against the validator
+# RPC — i.e. it dogfoods the same client the frontend uses. tsx runs the
+# TypeScript directly via Node's built-in test runner.
+[scripts]
+test = "node --import tsx --test tests/counter.ts"

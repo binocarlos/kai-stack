@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Single entrypoint for the Solana reference app — mirrors the repo's root
+# ./stack script. Everything runs inside Docker; you need only Docker installed.
+#
+#   ./stack build            build the Anchor program (emits the IDL)
+#   ./stack keys-sync        sync declare_id!/Anchor.toml to the program keypair
+#   ./stack codegen          regenerate the @solana/kit client from the IDL
+#   ./stack test             integration test (kit client vs a local validator)
+#   ./stack test-unit        fast SVM unit tests (litesvm, no validator)
+#   ./stack localnet         run surfpool (local validator) in the foreground
+#   ./stack deploy-localnet  deploy to the running surfpool
+#   ./stack deploy-devnet    deploy to devnet
+#   ./stack deploy-mainnet   deploy to mainnet-beta
+#   ./stack verify           verifiable build (installs solana-verify on demand)
+#   ./stack app              run surfpool + the React demo frontend
+#   ./stack shell            open a shell in the toolbox
+set -euo pipefail
+IFS=$'\n\t'
+
+export DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+function compose() { docker compose -f "$DIR/docker-compose.yml" "$@"; }
+
+# Run a one-off command in the toolbox (Rust+Solana+Anchor+Node).
+function tb() { compose run --rm toolbox "$@"; }
+
+# Create the local wallet keypair if it doesn't exist yet (used by anchor).
+function ensure-wallet() {
+  tb bash -c '[ -f "$ANCHOR_WALLET" ] || solana-keygen new --no-bip39-passphrase --silent -o "$ANCHOR_WALLET"'
+}
+
+function shell() { tb bash; }
+
+function build() { tb anchor build; }
+
+function keys-sync() { tb anchor keys sync; }
+
+# IDL -> @solana/kit client. `yarn generate` runs codama (see clients/ts).
+# chown the output back to the host user (the container runs as root).
+function codegen() {
+  tb bash -c 'cd /workspace/clients/ts && yarn install && yarn generate && chown -R "$(stat -c "%u:%g" /workspace)" src'
+}
+
+# Spins a local validator (anchor's bundled one), deploys, runs the kit-client
+# suite. Build + codegen first so the generated client the test imports exists.
+function test() {
+  ensure-wallet
+  build
+  codegen
+  tb bash -c "cd /workspace/program && yarn install && anchor test --skip-build"
+}
+
+# Fast SVM tests: load the built .so into litesvm in-process — no validator.
+function test-unit() {
+  build
+  tb bash -c "cd /workspace/program && yarn install && yarn test:unit"
+}
+
+function localnet() { compose up surfpool; }
+
+function deploy-localnet() {
+  ensure-wallet
+  tb bash -c "solana config set --url http://surfpool:8899 >/dev/null && (solana airdrop 100 >/dev/null 2>&1 || true) && anchor deploy --provider.cluster http://surfpool:8899"
+}
+
+# Run the standalone (no-frontend) example against the running surfpool localnet.
+function example() {
+  tb bash -c "cd /workspace/clients/ts && yarn install >/dev/null && RPC_URL=http://surfpool:8899 WS_URL=ws://surfpool:8900 yarn example:increment"
+}
+
+function deploy-devnet()  { ensure-wallet; tb anchor deploy --provider.cluster devnet; }
+function deploy-testnet() { ensure-wallet; tb anchor deploy --provider.cluster testnet; }
+function deploy-mainnet() { ensure-wallet; tb anchor deploy --provider.cluster mainnet; }
+
+# Deterministic build for on-chain verification. solana-verify isn't in the base
+# image, so install it on first use (cached in the cargo-registry volume).
+function verify() {
+  tb bash -c "command -v solana-verify >/dev/null || cargo install solana-verify --locked; cd /workspace/program && solana-verify build"
+}
+
+function app() { compose up surfpool app; }
+
+eval "$@"

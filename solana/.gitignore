@@ -1,0 +1,21 @@
+# Build artifacts
+program/target/
+program/.anchor/
+test-ledger/
+.surfpool/
+
+# Node
+node_modules/
+clients/ts/dist/
+app/dist/
+
+# Secrets / local config
+.env
+# Keypairs are never committed...
+*-keypair.json
+**/keypairs/*.json
+# ...except the throwaway dev program identity, committed on purpose so the repo
+# clones-and-runs. It is NOT for real funds — generate a fresh one for mainnet.
+!program/counter-keypair.json
+
+# The generated kit client (clients/ts/src/generated) IS committed as reference.
