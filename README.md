@@ -47,7 +47,9 @@ cp .env.example .env            # defaults work for local dev
 ```
 
 Run `./stack` with no arguments to list every command. Full details:
-- [`solana/README.md`](solana/README.md) — overview and the program → types → frontend pipeline
+- [`solana/README.md`](solana/README.md) — overview + a step-by-step walkthrough (build → deploy → frontend)
+- [`solana/docs/concepts.md`](solana/docs/concepts.md) — Solana from scratch, explained via the counter
+- [`solana/docs/writing-a-program.md`](solana/docs/writing-a-program.md) — write your own contract, with worked examples
 - [`solana/docs/development.md`](solana/docs/development.md) — the local dev loop
 - [`solana/docs/deployment.md`](solana/docs/deployment.md) — devnet/mainnet + verifiable builds
 - [`solana/docs/integration.md`](solana/docs/integration.md) — folding it into the main stack
